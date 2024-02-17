@@ -1,0 +1,29 @@
+{
+	"canisters": {
+		"backend": {
+			"main": "src/backend/main.mo",
+			"type": "motoko"
+		},
+		"frontend": {
+			"dependencies": ["backend", "internet-identity"],
+			"frontend": {
+				"entrypoint": "build/index.html"
+			},
+			"source": ["build/"],
+			"type": "assets"
+		},
+		"internet-identity": {
+			"type": "pull",
+			"id": "rdmx6-jaaaa-aaaaa-aaadq-cai",
+			"frontend": {}
+		}
+	},
+	"defaults": {
+		"build": {
+			"args": "",
+			"packtool": ""
+		}
+	},
+	"output_env_file": "src/frontend/.env",
+	"version": 1
+}
