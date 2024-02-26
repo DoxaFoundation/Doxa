@@ -1,7 +1,11 @@
 {
 	"canisters": {
-		"backend": {
-			"main": "src/backend/main.mo",
+		"cycle-reserve": {
+			"main": "src/backend/cycle-reserve/main.mo",
+			"type": "motoko"
+		},
+		"test-cycle-pool": {
+			"main": "src/backend/test-cycle-pool/main.mo",
 			"type": "motoko"
 		},
 		"frontend": {
