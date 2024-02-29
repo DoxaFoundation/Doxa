@@ -5,4 +5,5 @@ dfx deps init --argument '(null)' internet-identity
 dfx deps deploy
 
 #Deploy Backend Canister
-dfx deploy backend
+dfx deploy cycle-reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai
+dfx deploy test-cycle-pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai

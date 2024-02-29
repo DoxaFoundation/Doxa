@@ -8,6 +8,10 @@
 			"main": "src/backend/test-cycle-pool/main.mo",
 			"type": "motoko"
 		},
+		"icp-to-cycle": {
+			"main": "src/backend/icp-to-cycle/main.mo",
+			"type": "motoko"
+		},
 		"frontend": {
 			"dependencies": ["backend", "internet-identity"],
 			"frontend": {
