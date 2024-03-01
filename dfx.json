@@ -10,7 +10,8 @@
 		},
 		"icp-to-cycle": {
 			"main": "src/backend/icp-to-cycle/main.mo",
-			"type": "motoko"
+			"type": "motoko",
+			"dependencies": ["icp-ledger"]
 		},
 		"frontend": {
 			"dependencies": ["backend", "internet-identity"],
@@ -24,6 +25,26 @@
 			"type": "pull",
 			"id": "rdmx6-jaaaa-aaaaa-aaadq-cai",
 			"frontend": {}
+		},
+		"icp-ledger": {
+			"type": "custom",
+			"candid": "https://raw.githubusercontent.com/dfinity/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/rs/rosetta-api/icp_ledger/ledger.did",
+			"wasm": "https://download.dfinity.systems/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/canisters/ledger-canister.wasm.gz",
+			"remote": {
+				"id": {
+					"ic": "ryjl3-tyaaa-aaaaa-aaaba-cai"
+				}
+			}
+		},
+		"cycle-minting-canister": {
+			"type": "custom",
+			"candid": "https://raw.githubusercontent.com/dfinity/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/rs/nns/cmc/cmc.did",
+			"wasm": "https://download.dfinity.systems/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/canisters/cycles-minting-canister.wasm.gz",
+			"remote": {
+				"id": {
+					"ic": "rkp4c-7iaaa-aaaaa-aaaca-cai"
+				}
+			}
 		}
 	},
 	"defaults": {
