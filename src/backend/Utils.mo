@@ -3,6 +3,7 @@ import Array "mo:base/Array";
 import Blob "mo:base/Blob";
 import Text "mo:base/Text";
 import Iter "mo:base/Iter";
+import Principal "mo:base/Principal";
 
 module {
 
@@ -52,4 +53,17 @@ module {
 		);
 	};
 
+	// Principal to Subaccount
+	type Subaccount = [Nat8];
+
+	public func principalToSubaccount(id : Principal) : Subaccount {
+		let p = Blob.toArray(Principal.toBlob(id));
+		Array.tabulate(
+			32,
+			func(i : Nat) : Nat8 {
+				if (i >= p.size() + 1) 0 else if (i == 0) (Nat8.fromNat(p.size())) else (p[i - 1]);
+			}
+		)
+		|> Blob.toArray(Blob.fromArray(_));
+	};
 };

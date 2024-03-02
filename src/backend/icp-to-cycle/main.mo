@@ -9,12 +9,12 @@ import Nat "mo:base/Nat";
 import Nat64 "mo:base/Nat64";
 import Utils "../Utils";
 
-// import icpLedger "ic:ryjl3-tyaaa-aaaaa-aaaba-cai";
 import icpLedger "canister:icp-ledger";
+import CMC "canister:cycle-minting-canister";
+
+import Binary "mo:encoding.mo/Binary";
 
 actor IcpToCycle {
-	let cmc : CyclesMinter.Cmc = actor (CanisterIds.CYCLES_MINTING_CANISTER);
-	// let ledger : LedgerCanister.Self = actor (CanisterIds.LEDGER_CANISTER);
 
 	public func transfer_to_cmc() : async icpLedger.Icrc1TransferResult {
 		let principal : Principal = Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
@@ -23,20 +23,25 @@ actor IcpToCycle {
 		// sub[0] := 1;
 		// let subaccount = ?Array.freeze(sub);
 
-		let subaccount = Utils.toSubAccount(1);
+		// let subaccount = Utils.toSubAccount(1);
 
-		let account : icpLedger.Account = { owner = principal; subaccount };
+		let account : icpLedger.Account = {
+			owner = principal;
+			subaccount = ?Utils.principalToSubaccount(Principal.fromActor(IcpToCycle));
+		};
 
-		let memo : [Nat8] = Utils.fromNatToNat8Array(10, 1347764804);
+		// let memo : [Nat8] = Utils.fromNatToNat8Array(4, 1347768404);
+		let memo : [Nat8] = Binary.BigEndian.fromNat64(1347768404);
+		// let memo : [Nat8] = Binary.LittleEndian.fromNat64(1347768404);
 
 		let arg : icpLedger.TransferArg = {
 
 			to = account;
 			fee = ?10000;
 			memo = ?memo;
-			// from_subaccount = null;
+			from_subaccount = null;
 
-			from_subaccount = Utils.toSubAccount(1);
+			// from_subaccount = Utils.toSubAccount(1);
 
 			created_at_time = ?Nat64.fromIntWrap(Time.now());
 			amount = 10_000_000; //.01 icp
@@ -46,13 +51,27 @@ actor IcpToCycle {
 		await icpLedger.icrc1_transfer(arg);
 	};
 
-	public func icp_account_of_actor() : async Text {
+	public func cmc_account(sub : Nat) : async Text {
+		let subaccount = Utils.toSubAccount(sub);
+
+		let account = {
+			owner = Principal.fromText("rkp4c-7iaaa-aaaaa-aaaca-cai");
+			subaccount = subaccount;
+		};
+
+		let accountIdentifierofThis = await icpLedger.account_identifier(account);
+
+		Utils.toHex(accountIdentifierofThis);
+
+	};
+
+	public func icp_account_of_actor(sub : Nat) : async Text {
 
 		// var sub = Array.init<Nat8>(32, 0);
 		// sub[0] := 1;
 		// let subaccount = ?Array.freeze(sub);
 
-		let subaccount = Utils.toSubAccount(1);
+		let subaccount = Utils.toSubAccount(sub);
 
 		let account = {
 			owner = Principal.fromActor(IcpToCycle);
@@ -84,16 +103,26 @@ actor IcpToCycle {
 	public func notify_top_up(block : CyclesMinter.BlockIndex) : async CyclesMinter.NotifyTopUpResult {
 		let actorsPrincipal : Principal = Principal.fromActor(IcpToCycle);
 
-		let arg : CyclesMinter.NotifyTopUpArg = {
+		let arg : CMC.NotifyTopUpArg = {
 			block_index = block;
 			canister_id = actorsPrincipal;
 		};
 
-		await cmc.notify_top_up(arg);
+		await CMC.notify_top_up(arg);
 	};
 
 	public func get_icp_xdr_conversion_rate() : async CyclesMinter.IcpXdrConversionRateResponse {
-		await cmc.get_icp_xdr_conversion_rate();
+		await CMC.get_icp_xdr_conversion_rate();
+	};
+
+	public func notify_mint_cycles(blockIndex : Nat) : async CMC.NotifyMintCyclesResult {
+
+		await CMC.notify_mint_cycles({
+			block_index = Nat64.fromNat(blockIndex);
+			deposit_memo = ?Binary.BigEndian.fromNat64(1347768404);
+			to_subaccount = null;
+		});
+
 	};
 
 };

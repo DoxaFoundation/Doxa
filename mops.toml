@@ -1,0 +1,3 @@
+[dependencies]
+base = "0.10.4"
+"encoding.mo" = "https://github.com/aviate-labs/encoding.mo#master@2711d18727e954b11afc0d37945608512b5fbce2"

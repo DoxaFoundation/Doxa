@@ -8,13 +8,13 @@
 			"main": "src/backend/test-cycle-pool/main.mo",
 			"type": "motoko"
 		},
-		"icp-to-cycle": {
+		"icp_to_cycle": {
 			"main": "src/backend/icp-to-cycle/main.mo",
 			"type": "motoko",
-			"dependencies": ["icp-ledger"]
+			"dependencies": ["icp-ledger", "cycle-minting-canister"]
 		},
 		"frontend": {
-			"dependencies": ["backend", "internet-identity"],
+			"dependencies": ["cycle-reserve", "internet-identity"],
 			"frontend": {
 				"entrypoint": "build/index.html"
 			},
@@ -38,19 +38,23 @@
 		},
 		"cycle-minting-canister": {
 			"type": "custom",
-			"candid": "https://raw.githubusercontent.com/dfinity/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/rs/nns/cmc/cmc.did",
-			"wasm": "https://download.dfinity.systems/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/canisters/cycles-minting-canister.wasm.gz",
+			"candid": "https://raw.githubusercontent.com/dfinity/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/rs/nns/cmc/cmc.did",
+			"wasm": "https://download.dfinity.systems/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/canisters/cycles-minting-canister.wasm.gz",
 			"remote": {
 				"id": {
 					"ic": "rkp4c-7iaaa-aaaaa-aaaca-cai"
 				}
 			}
+		},
+		"exchange-rate-canister": {
+			"type": "pull",
+			"id": "uf6dk-hyaaa-aaaaq-qaaaq-cai"
 		}
 	},
 	"defaults": {
 		"build": {
 			"args": "",
-			"packtool": ""
+			"packtool": "mops sources"
 		}
 	},
 	"output_env_file": "src/frontend/.env",

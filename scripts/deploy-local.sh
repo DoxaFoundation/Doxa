@@ -36,6 +36,19 @@ dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp-ledger --argument "
 "
 ######################################################################################
 
+#Deploy Cycle minting canister locally
+dfx deploy cycle-minting-canister --specified-id rkp4c-7iaaa-aaaaa-aaaca-cai  --argument '(
+  opt record { 
+      ledger_canister_id = opt principal "ryjl3-tyaaa-aaaaa-aaaba-cai";
+      governance_canister_id = opt principal "rrkah-fqaaa-aaaaa-aaaaq-cai";
+      last_purged_notification = null;
+      exchange_rate_canister = opt variant { 
+        Set = principal "uf6dk-hyaaa-aaaaq-qaaaq-cai"
+      };
+      cycles_ledger_canister_id = null 
+  })'
+
+
 #Deploy Backend Canister
 dfx deploy cycle-reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai
 dfx deploy test-cycle-pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
