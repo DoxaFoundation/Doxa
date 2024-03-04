@@ -1,20 +1,24 @@
 {
 	"canisters": {
-		"cycle-reserve": {
+		"backend": {
+			"main": "src/backend/main.mo",
+			"type": "motoko"
+		},
+		"cycle_reserve": {
 			"main": "src/backend/cycle-reserve/main.mo",
 			"type": "motoko"
 		},
-		"test-cycle-pool": {
+		"test_cycle_pool": {
 			"main": "src/backend/test-cycle-pool/main.mo",
 			"type": "motoko"
 		},
 		"icp_to_cycle": {
 			"main": "src/backend/icp-to-cycle/main.mo",
 			"type": "motoko",
-			"dependencies": ["icp-ledger", "cycle-minting-canister"]
+			"dependencies": ["icp_ledger", "cycle_minting_canister"]
 		},
 		"frontend": {
-			"dependencies": ["cycle-reserve", "internet-identity"],
+			"dependencies": ["cycle_reserve", "internet-identity"],
 			"frontend": {
 				"entrypoint": "build/index.html"
 			},
@@ -26,7 +30,7 @@
 			"id": "rdmx6-jaaaa-aaaaa-aaadq-cai",
 			"frontend": {}
 		},
-		"icp-ledger": {
+		"icp_ledger": {
 			"type": "custom",
 			"candid": "https://raw.githubusercontent.com/dfinity/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/rs/rosetta-api/icp_ledger/ledger.did",
 			"wasm": "https://download.dfinity.systems/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/canisters/ledger-canister.wasm.gz",
@@ -36,7 +40,7 @@
 				}
 			}
 		},
-		"cycle-minting-canister": {
+		"cycle_minting_canister": {
 			"type": "custom",
 			"candid": "https://raw.githubusercontent.com/dfinity/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/rs/nns/cmc/cmc.did",
 			"wasm": "https://download.dfinity.systems/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/canisters/cycles-minting-canister.wasm.gz",
@@ -46,9 +50,14 @@
 				}
 			}
 		},
-		"exchange-rate-canister": {
+		"exchange_rate_canister": {
 			"type": "pull",
 			"id": "uf6dk-hyaaa-aaaaq-qaaaq-cai"
+		},
+		"cycle_ledger": {
+			"type": "custom",
+			"wasm": "https://github.com/dfinity/cycles-ledger/releases/download/cycles-ledger-v0.3.0/cycles-ledger.wasm.gz",
+			"candid": "https://github.com/dfinity/cycles-ledger/releases/download/cycles-ledger-v0.3.0/cycles-ledger.did"
 		}
 	},
 	"defaults": {

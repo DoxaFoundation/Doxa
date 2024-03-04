@@ -13,7 +13,7 @@ fi
 export MINTER_ACCOUNT_ID=$(dfx ledger account-id --identity minter)
 export DEFAULT_ACCOUNT_ID=$(dfx ledger account-id --identity default)
 
-dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp-ledger --argument "
+dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp_ledger --argument "
   (variant {
     Init = record {
       minting_account = \"$MINTER_ACCOUNT_ID\";
@@ -37,7 +37,7 @@ dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp-ledger --argument "
 ######################################################################################
 
 #Deploy Cycle minting canister locally
-dfx deploy cycle-minting-canister --specified-id rkp4c-7iaaa-aaaaa-aaaca-cai  --argument '(
+dfx deploy cycle_minting_canister --specified-id rkp4c-7iaaa-aaaaa-aaaca-cai  --argument '(
   opt record { 
       ledger_canister_id = opt principal "ryjl3-tyaaa-aaaaa-aaaba-cai";
       governance_canister_id = opt principal "rrkah-fqaaa-aaaaa-aaaaq-cai";
@@ -48,7 +48,11 @@ dfx deploy cycle-minting-canister --specified-id rkp4c-7iaaa-aaaaa-aaaca-cai  --
       cycles_ledger_canister_id = null 
   })'
 
+#################### Cycle Ledger ####################
+dfx deploy cycle-ledger --specified-id um5iw-rqaaa-aaaaq-qaaba-cai --argument '(
+  variant { Init= record { max_blocks_per_request = 1; index_id = null }}
+)'
 
 #Deploy Backend Canister
-dfx deploy cycle-reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai
-dfx deploy test-cycle-pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
+dfx deploy cycle_reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai
+dfx deploy test_cycle_pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
