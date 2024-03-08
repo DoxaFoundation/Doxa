@@ -6,8 +6,12 @@ import Iter "mo:base/Iter";
 import Principal "mo:base/Principal";
 
 import Account "mo:account-identifier";
+import HashMap "mo:base/HashMap";
+import Buffer "mo:base/Buffer";
 
 module {
+
+	type HashMap<K, V> = HashMap.HashMap<K, V>;
 
 	public let accountIdentifier = Account.accountIdentifier;
 	public let principalToSubaccountBlob = Account.principalToSubaccount;
@@ -70,5 +74,66 @@ module {
 			}
 		)
 		|> Blob.toArray(Blob.fromArray(_));
+	};
+
+	type Value = {
+		#Array : [Value];
+		#Blob : [Nat8];
+		#Int : Int;
+		#Map : [(Text, Value)];
+		#Nat : Nat;
+		#Nat64 : Nat64;
+		#Text : Text;
+	};
+	type SubValue = {
+		#Array : [Value];
+		#Blob : [Nat8];
+		#Int : Int;
+		#Nat : Nat;
+		#Nat64 : Nat64;
+		#Text : Text;
+	};
+
+	// For ICRC block inspection need for Notify functions
+	public func formatValueOfBlock(value : Value) : HashMap<Text, SubValue> {
+
+		let hmap = HashMap.HashMap<Text, SubValue>(0, Text.equal, Text.hash);
+
+		func format(value : Value) : SubValue {
+			switch (value) {
+				case (#Blob blob) { #Blob blob };
+				case (#Int int) { #Int int };
+				case (#Nat nat) { #Nat nat };
+				case (#Nat64 nat64) { #Nat64 nat64 };
+				case (#Text text) { #Text text };
+				case (#Map map) {
+					// Array of keys of this map
+					let buffer = Buffer.Buffer<{ #Text : Text }>(0);
+					for (element in map.vals()) {
+						hmap.put(element.0, format(element.1));
+						buffer.add(#Text(element.0));
+					};
+					#Array(Buffer.toArray(buffer));
+				};
+				case (#Array array) {
+					let buffer = Buffer.Buffer<SubValue>(0);
+
+					for (arrValue in array.vals()) {
+						buffer.add(format(arrValue));
+					};
+
+					return #Array(Buffer.toArray(buffer));
+				};
+			};
+		};
+
+		let subValue : SubValue = format(value);
+
+		return hmap;
+	};
+
+	// Account Identifier with Subaccount default
+	public func accountIdentifierDefault(id : Principal) : [Nat8] {
+		Blob.toArray(Account.accountIdentifier(id, Account.defaultSubaccount()));
 	};
 };

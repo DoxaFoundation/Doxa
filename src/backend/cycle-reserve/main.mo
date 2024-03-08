@@ -17,11 +17,11 @@ actor {
 		cycle_pool_receive : shared () -> async Nat;
 	} = actor ("bw4dl-smaaa-aaaaa-qaacq-cai");
 
-	let doxaUsd : actor {} = actor ("bw4dl-smaaa-aaaaa-qaacq-cai");
+	let stablecoinMinter : actor {} = actor ("bd3sg-teaaa-aaaaa-qaaba-cai");
 
 	// Ledger canister or Cycle minting canister will call this method to add cycles to the reserve
 	public shared ({ caller }) func cycle_reserve_receive() : async Result {
-		if (caller != Principal.fromActor(doxaUsd)) {
+		if (caller != Principal.fromActor(stablecoinMinter)) {
 			#err("Unauthorized caller");
 		} else {
 			let acceptCycles = Cycles.accept(Cycles.available());
