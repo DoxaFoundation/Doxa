@@ -14,6 +14,8 @@ import Blob "mo:base/Blob";
 import Principal "mo:base/Principal";
 import Nat64 "mo:base/Nat64";
 import Time "mo:base/Time";
+import Cycles "mo:base/ExperimentalCycles";
+import Debug "mo:base/Debug";
 import Utils "../Utils";
 
 actor StablecoinMinter {
@@ -21,6 +23,7 @@ actor StablecoinMinter {
 	type HashMap<K, V> = HashMap.HashMap<K, V>;
 
 	type CLBlockIndex = CycleLedger.BlockIndex;
+	type Account = { owner : Principal; subaccount : ?Blob };
 	type MintCoin = {
 		#USDx;
 	};
@@ -65,6 +68,11 @@ actor StablecoinMinter {
 	type NotifyMintWithCyclesLedgerTransferResult = Result<Text, NotifyError>;
 	type NotifyMintWithICPResult = Result<Text, NotifyError>;
 
+	type MintThroughCallError = {
+		#NotEnoughCyclesAvailable : Text;
+	};
+	type MintThroughCallResult = Result<Text, MintThroughCallError>;
+
 	let { nhash; n64hash } = Map;
 
 	stable let processedMintRequestFromCylesLedgerTx = Map.new<CLBlockIndex, Nat>();
@@ -74,6 +82,7 @@ actor StablecoinMinter {
 	stable let icpToCmcTxBlockIndexes = [];
 
 	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, coin : MintCoin) : async NotifyMintWithICPResult {
+		trapAnonymousUser(caller);
 
 		if (Map.get(processedMintRequestFromICPTx, n64hash, icpBlockIndex) != null) {
 
@@ -110,10 +119,10 @@ actor StablecoinMinter {
 			};
 		};
 
-		// Notify CMC to mint cycles to reserver canister
+		// Notify CMC to mint cycles to stablecoin minter
 		let notifyTopUpArg = {
 			block_index = blockIndexOfIcpToCMC;
-			canister_id = Principal.fromActor(CycleReserve);
+			canister_id = Principal.fromActor(StablecoinMinter);
 		};
 		let notifyTopUpResult = await CMC.notify_top_up(notifyTopUpArg);
 		let cyclesAmount : Nat = switch (notifyTopUpResult) {
@@ -122,6 +131,13 @@ actor StablecoinMinter {
 				return #err(#Other({ error_message = "CMC Notify Top Up Error"; error_code = 3 }));
 			};
 		};
+
+		// After collecting minting fee in cycles send remaining cycles to reserve
+		let mintFee : Nat = calculateMintFee(cyclesAmount);
+		let reserveAmount : Nat = cyclesAmount - mintFee;
+
+		Cycles.add(reserveAmount);
+		let result = await CycleReserve.cycle_reserve_receive();
 
 		// calling ICRC to mint the stablecoin
 
@@ -132,6 +148,7 @@ actor StablecoinMinter {
 	};
 
 	public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
+		trapAnonymousUser(caller);
 
 		if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
 
@@ -147,9 +164,14 @@ actor StablecoinMinter {
 			case (#err(error)) { return #err(error) };
 		};
 
+		// Calculate mint fee , cycles ledger transaction fee, and transfer the remaining cycles to the reserve
+		let mintFee : Nat = calculateMintFee(txAmount);
+		let ledgerTxFee : Nat = 100_000_000;
+		let reserveAmount : Nat = txAmount - mintFee - ledgerTxFee;
+
 		///// transfer the cycles to the reserve and mint the stablecoin
 		let withdrawArgs : CycleLedger.WithdrawArgs = {
-			amount = (txAmount - 100_000_000);
+			amount = reserveAmount;
 			from_subaccount = null;
 			to = Principal.fromActor(CycleReserve);
 			created_at_time = ?Nat64.fromIntWrap(Time.now());
@@ -169,7 +191,46 @@ actor StablecoinMinter {
 		#ok("");
 	};
 
+	public shared ({ caller }) func mint_through_call(account : ?Account) : async MintThroughCallResult {
+		trapAnonymousUser(caller);
+
+		let cyclesAmount : Nat = Cycles.available();
+		if (cyclesAmount < 1_000_000_000_000) {
+			return #err(#NotEnoughCyclesAvailable(("Cycles available in call " # Nat.toText(cyclesAmount) # " is less than 1 Trillion cycles")));
+		} else {
+			let mintTo : Account = switch (account) {
+				case (?value) { value };
+				case (null) { { owner = caller; subaccount = null } };
+			};
+
+			// obtaining cycles received through function call
+			let obtainedCycles = Cycles.accept(cyclesAmount);
+
+			// After collecting minting fee in cycles send remaining cycles to reserve
+			let mintFee : Nat = calculateMintFee(obtainedCycles);
+			let reserveAmount : Nat = obtainedCycles - mintFee;
+
+			Cycles.add(reserveAmount);
+			let result = await CycleReserve.cycle_reserve_receive();
+
+			// calling ICRC to mint the stablecoin
+
+			// Then add Block index to the processedMintRequestFromCalls
+
+			#ok("");
+		};
+	};
+
 	////////// Private functions //////////
+	private func calculateMintFee(amount : Nat) : Nat {
+		let fixedFee : Nat = 1_000_000_000;
+		let variableFee : Nat = (amount / 10000);
+		fixedFee + variableFee;
+	};
+
+	func trapAnonymousUser(caller : Principal) : () {
+		if (Principal.isAnonymous(caller)) Debug.trap("Anonymous principal cannot mint");
+	};
 
 	private func validateICPBlock(icpBlockIndex : Nat64, caller : Principal) : async Result<Nat64, NotifyError> {
 		let queryBlocksResponse = await IcpLedger.query_blocks({
