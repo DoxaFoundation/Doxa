@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 
-# The minter identity
-dfx identity new minter
-
 # The archive controller
 dfx identity new archive_controller
 
-dfx identity use archive_controller
-export ARCHIVE_CONTROLLER=$(dfx identity get-principal)
+export ARCHIVE_CONTROLLER=$(dfx identity get-principal --identity archive_controller)
 
-dfx identity use minter
-export MINTER_ACCOUNT=$(dfx identity get-principal)
+# canister id of stable coin minter as minting account
+export MINTER_ACCOUNT=$(dfx canister id stablecoin_minter)
 
 TOKEN_NAME="DoxaDollar"
 TOKEN_SYMBOL="DD"
 
-PRE_MINTED_TOKENS=100_000
+PRE_MINTED_TOKENS=0
 TRANSFER_FEE=1_000
 
 TRIGGER_THRESHOLD=2000
