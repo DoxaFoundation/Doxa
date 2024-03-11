@@ -2,8 +2,10 @@ import CycleLedger "canister:cycles_ledger";
 import IcpLedger "canister:icp_ledger";
 import CycleReserve "canister:cycle_reserve";
 import CMC "canister:cycle_minting_canister";
+import USDx "canister:usdx_ledger";
 
 import Map "mo:map/Map";
+import Vector "mo:vector";
 import Result "mo:base/Result";
 import HashMap "mo:base/HashMap";
 import Text "mo:base/Text";
@@ -16,6 +18,7 @@ import Nat64 "mo:base/Nat64";
 import Time "mo:base/Time";
 import Cycles "mo:base/ExperimentalCycles";
 import Debug "mo:base/Debug";
+import Float "mo:base/Float";
 import Utils "../Utils";
 
 actor StablecoinMinter {
@@ -23,7 +26,10 @@ actor StablecoinMinter {
 	type HashMap<K, V> = HashMap.HashMap<K, V>;
 
 	type CLBlockIndex = CycleLedger.BlockIndex;
-	type Account = { owner : Principal; subaccount : ?Blob };
+	type IcpBlockIndex = IcpLedger.BlockIndex;
+	type USDxBlockIndex = USDx.BlockIndex;
+
+	type Account = { owner : Principal; subaccount : ?[Nat8] };
 	type MintCoin = {
 		#USDx;
 	};
@@ -65,31 +71,48 @@ actor StablecoinMinter {
 
 	};
 
-	type NotifyMintWithCyclesLedgerTransferResult = Result<Text, NotifyError>;
-	type NotifyMintWithICPResult = Result<Text, NotifyError>;
+	type NotifyMintWithCyclesLedgerTransferResult = Result<USDxBlockIndex, NotifyError>;
+	type NotifyMintWithICPResult = Result<USDxBlockIndex, NotifyError>;
 
 	type MintThroughCallError = {
 		#NotEnoughCyclesAvailable : Text;
+		#LedgerTransferError : Text;
 	};
-	type MintThroughCallResult = Result<Text, MintThroughCallError>;
+	type MintThroughCallResult = Result<USDxBlockIndex, MintThroughCallError>;
 
 	let { nhash; n64hash } = Map;
 
-	stable let processedMintRequestFromCylesLedgerTx = Map.new<CLBlockIndex, Nat>();
-	stable let processedMintRequestFromICPTx = Map.new<Nat64, Nat>();
-	stable let cyclesLedgerMinterTxBlockIndexes = [];
-	stable let cycleWithdrawTxBlockIndexes = [];
-	stable let icpToCmcTxBlockIndexes = [];
+	// key = Notify cycles Ledger Tx BlockIndex ,  value = (Cycle Withdraw Tx BlockIndex, USDx mint Tx BlockIndex)
+	private stable let processedMintRequestFromCylesLedgerTx = Map.new<CLBlockIndex, (CLBlockIndex, USDxBlockIndex)>();
+
+	// key = Notify ICP Tx BlockIndex , value = (ICP to CMC Tx BlockIndex, USDx mint Tx BlockIndex)
+	private stable let processedMintRequestFromIcpTx = Map.new<IcpBlockIndex, (IcpBlockIndex, USDxBlockIndex)>();
+
+	private stable let processedMintThroughCalls = Vector.new<USDxBlockIndex>();
+
+	private stable var xdrUsdRate : Float = 1.337888588;
+
+	public shared ({ caller }) func mintForMe(amount : Nat) : async USDx.TransferResult {
+		let arg : USDx.TransferArg = {
+			to = { owner = caller; subaccount = null };
+			fee = null;
+			memo = null;
+			from_subaccount = null;
+			created_at_time = null;
+			amount;
+		};
+		await USDx.icrc1_transfer(arg);
+	};
 
 	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, coin : MintCoin) : async NotifyMintWithICPResult {
 		trapAnonymousUser(caller);
 
-		if (Map.get(processedMintRequestFromICPTx, n64hash, icpBlockIndex) != null) {
+		if (Map.get(processedMintRequestFromIcpTx, n64hash, icpBlockIndex) != null) {
 
-			let (?blockIndex) = Map.get(processedMintRequestFromICPTx, n64hash, icpBlockIndex) else {
+			let (?(_icpBlockIndex, _usdxBlockIndex)) = Map.get(processedMintRequestFromIcpTx, n64hash, icpBlockIndex) else {
 				return #err(#Other({ error_message = "blockIndex not found"; error_code = 1 }));
 			};
-			return #err(#AlreadyProcessed { blockIndex });
+			return #err(#AlreadyProcessed { blockIndex = _usdxBlockIndex });
 		};
 
 		let validatedIcpBlockResult = await validateICPBlock(icpBlockIndex, caller);
@@ -111,8 +134,8 @@ actor StablecoinMinter {
 			created_at_time = ?{ timestamp_nanos = Nat64.fromIntWrap(Time.now()) };
 
 		};
-		let transferResult = await IcpLedger.transfer(transferArgs);
-		let blockIndexOfIcpToCMC : Nat64 = switch (transferResult) {
+		let icpTransferResult = await IcpLedger.transfer(transferArgs);
+		let blockIndexOfIcpToCMC : Nat64 = switch (icpTransferResult) {
 			case (#Ok(value)) { value };
 			case (#Err(error)) {
 				return #err(#Other({ error_message = "ICP Ledger Transfer Error"; error_code = 2 }));
@@ -140,11 +163,26 @@ actor StablecoinMinter {
 		let result = await CycleReserve.cycle_reserve_receive();
 
 		// calling ICRC to mint the stablecoin
+		let usdxTransferResult : USDx.TransferResult = await USDx.icrc1_transfer({
+			to = { owner = caller; subaccount = null };
+			fee = null;
+			memo = null;
+			from_subaccount = null;
+			created_at_time = null;
+			amount = calculateMintAmount(reserveAmount);
+		});
+
+		let usdxBlockIndex = switch (usdxTransferResult) {
+			case (#Ok(value)) { value };
+			case (#Err(error)) {
+				return #err(#Other({ error_message = "USDx Ledger Transfer Error"; error_code = 7 }));
+			};
+		};
 
 		// Then add Block index to the processedMintRequestFromICPTx
+		Map.set(processedMintRequestFromIcpTx, n64hash, icpBlockIndex, (blockIndexOfIcpToCMC, usdxBlockIndex));
 
-		#ok("");
-
+		#ok(usdxBlockIndex);
 	};
 
 	public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
@@ -152,21 +190,21 @@ actor StablecoinMinter {
 
 		if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
 
-			let (?blockIndex) = Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) else {
+			let (?(cyclesLedgerBlockIndex, usdxBlockIndex)) = Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) else {
 				return #err(#Other({ error_message = "blockIndex not found"; error_code = 1 }));
 			};
-			return #err(#AlreadyProcessed { blockIndex });
+			return #err(#AlreadyProcessed { blockIndex = usdxBlockIndex });
 		};
 
 		let validatedBlockResult = await validateCyclesLedgerBlock(blockIndex_, caller);
-		let txAmount : Nat = switch (validatedBlockResult) {
+		let (txAmount, mintTo) : (Nat, Account) = switch (validatedBlockResult) {
 			case (#ok(value)) { value };
 			case (#err(error)) { return #err(error) };
 		};
 
 		// Calculate mint fee , cycles ledger transaction fee, and transfer the remaining cycles to the reserve
 		let mintFee : Nat = calculateMintFee(txAmount);
-		let ledgerTxFee : Nat = 100_000_000;
+		let ledgerTxFee : Nat = 100_000_000; // For withdrawing cycles
 		let reserveAmount : Nat = txAmount - mintFee - ledgerTxFee;
 
 		///// transfer the cycles to the reserve and mint the stablecoin
@@ -184,14 +222,31 @@ actor StablecoinMinter {
 				return #err(#Other({ error_message = "Cycles Ledger Withdraw Error"; error_code = 2 }));
 			};
 		};
+
 		// calling ICRC to mint the stablecoin
+		let transferResult : USDx.TransferResult = await USDx.icrc1_transfer({
+			to = mintTo;
+			fee = null;
+			memo = null;
+			from_subaccount = null;
+			created_at_time = null;
+			amount = calculateMintAmount(reserveAmount);
+		});
+
+		let usdxBlockIndex = switch (transferResult) {
+			case (#Ok(value)) { value };
+			case (#Err(error)) {
+				return #err(#Other({ error_message = "USDx Ledger Transfer Error"; error_code = 7 }));
+			};
+		};
 
 		// Then add Block index to the processedMintRequestFromCylesLedger
+		Map.set(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_, (withdrawBlockIndex, usdxBlockIndex));
 
-		#ok("");
+		#ok(usdxBlockIndex);
 	};
 
-	public shared ({ caller }) func mint_through_call(account : ?Account) : async MintThroughCallResult {
+	public shared ({ caller }) func mint_through_call(coin : MintCoin, account : ?Account) : async MintThroughCallResult {
 		trapAnonymousUser(caller);
 
 		let cyclesAmount : Nat = Cycles.available();
@@ -214,11 +269,39 @@ actor StablecoinMinter {
 			let result = await CycleReserve.cycle_reserve_receive();
 
 			// calling ICRC to mint the stablecoin
+			let transferResult : USDx.TransferResult = await USDx.icrc1_transfer({
+				to = mintTo;
+				fee = null;
+				memo = null;
+				from_subaccount = null;
+				created_at_time = null;
+				amount = calculateMintAmount(reserveAmount);
+			});
+
+			let usdxBlockIndex = switch (transferResult) {
+				case (#Ok(value)) { value };
+				case (#Err(error)) {
+					return #err(#LedgerTransferError("USDx Ledger Transfer Error"));
+				};
+			};
 
 			// Then add Block index to the processedMintRequestFromCalls
+			Vector.add(processedMintThroughCalls, usdxBlockIndex);
 
-			#ok("");
+			#ok(usdxBlockIndex);
 		};
+	};
+
+	public query func get_account_identitier_of_stablecoin_minter() : async (IcpLedger.AccountIdentifier, Text) {
+		let accountIdentitifier = Utils.accountIdentifierDefault(Principal.fromActor(StablecoinMinter));
+		(accountIdentitifier, Utils.toHex(accountIdentitifier));
+	};
+	public shared query ({ caller }) func caller_account_identifier() : async Text {
+		let accountIdentitifier = Utils.accountIdentifier(
+			Principal.fromActor(CMC),
+			Utils.principalToSubaccountBlob(caller)
+		);
+		Utils.toHex(Blob.toArray accountIdentitifier);
 	};
 
 	////////// Private functions //////////
@@ -226,6 +309,15 @@ actor StablecoinMinter {
 		let fixedFee : Nat = 1_000_000_000;
 		let variableFee : Nat = (amount / 10000);
 		fixedFee + variableFee;
+	};
+
+	// Calculate mint amount in 8 decimal places on the basis of xdrUsdRate and cycles (note 1 trillion cycles is equal to  1 xdr )
+	private func calculateMintAmount(cycles : Nat) : Nat {
+		let xdrAmount : Float = Float.fromInt cycles / 1_000_000_000_000;
+		let usdAmount : Float = xdrAmount * xdrUsdRate;
+		let usdAmountIn8Decimals : Float = usdAmount * 100_000_000;
+
+		Int.abs(Float.toInt(usdAmountIn8Decimals));
 	};
 
 	func trapAnonymousUser(caller : Principal) : () {
@@ -285,7 +377,7 @@ actor StablecoinMinter {
 	//     382623823;
 	// };
 
-	private func validateCyclesLedgerBlock(blockIndex_ : CLBlockIndex, caller : Principal) : async Result<Nat, NotifyError> {
+	private func validateCyclesLedgerBlock(blockIndex_ : CLBlockIndex, caller : Principal) : async Result<(Nat, Account), NotifyError> {
 		let getBlocksResult = await CycleLedger.icrc3_get_blocks([{
 			length = 1;
 			start = blockIndex_;
@@ -330,7 +422,7 @@ actor StablecoinMinter {
 		if (amount < 1_000_000_000_000) {
 			return #err(#InvalidTransaction("Transaction amount is less than 1 Trillion cycles"));
 		} else {
-			#ok(Int.abs(amount));
+			#ok(Int.abs(amount), getAccountFromCyclesLedgerTxFrom(transferTx.transaction.from));
 		};
 
 	};
@@ -355,7 +447,7 @@ actor StablecoinMinter {
 
                             for (p in phash.vals()) {
                                 let (#Int byt) = p else {
-                                    return #err(#Other({ error_message = "phash is not an array of Int"; error_code = 5 }));
+                                    return #err(#Other({ error_message = "phash is not an array of Int"; error_code = 6 }));
                                 };
                                 buffer.add(byt);
                             };
@@ -386,7 +478,7 @@ actor StablecoinMinter {
 							let buffer = Buffer.Buffer<Blob>(0);
 							for (account in from.vals()) {
 								let (#Blob bytesArr) = account else {
-									return #err(#Other({ error_message = "from is not an array of Bytes"; error_code = 3 }));
+									return #err(#Other({ error_message = "from is not an array of Bytes"; error_code = 4 }));
 								};
 								buffer.add(Blob.fromArray(bytesArr));
 							};
@@ -403,7 +495,7 @@ actor StablecoinMinter {
 							let buffer = Buffer.Buffer<Blob>(0);
 							for (account in to.vals()) {
 								let (#Blob bytesArr) = account else {
-									return #err(#Other({ error_message = "to is not an array of Bytes"; error_code = 4 }));
+									return #err(#Other({ error_message = "to is not an array of Bytes"; error_code = 5 }));
 								};
 								buffer.add(Blob.fromArray(bytesArr));
 							};
@@ -441,5 +533,20 @@ actor StablecoinMinter {
 		};
 
 	};
+
+	func getAccountFromCyclesLedgerTxFrom(from : [Blob]) : Account {
+		if (from.size() == 0) {
+			Debug.trap("from array is empty");
+		} else if (from.size() == 1) {
+			return { owner = Principal.fromBlob(from[0]); subaccount = null };
+		} else {
+			return { owner = Principal.fromBlob(from[0]); subaccount = ?Blob.toArray(from[1]) };
+		};
+	};
+
+	system func preupgrade() : () {
+
+	};
+	system func postupgrade() : () {};
 
 };

@@ -4,7 +4,10 @@ dfx deps pull
 dfx deps init --argument '(null)' internet-identity
 dfx deps deploy
 
+########################################################################################
 ########################### Deploy local ICP ledger canister ###########################
+########################################################################################
+
 if ! dfx identity list | grep -q minter; then
     # If minter is not found, run the command
     dfx identity new minter
@@ -35,6 +38,7 @@ dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp_ledger --argument "
   })
 "
 ######################################################################################
+######################################################################################
 
 #Deploy Cycle minting canister locally
 dfx deploy cycle_minting_canister --specified-id rkp4c-7iaaa-aaaaa-aaaca-cai  --argument '(
@@ -54,5 +58,21 @@ dfx deploy cycles_ledger --specified-id um5iw-rqaaa-aaaaq-qaaba-cai --argument '
 )'
 
 #Deploy Backend Canister
-dfx deploy cycle_reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai
+dfx deploy cycle_reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai --with-cycles 1_000_000
 dfx deploy test_cycle_pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
+
+# Creating Local USDx Ledger before deploying stablecoin_minter (stablecoin_minter is a dependency of usdx_ledger)
+dfx canister create usdx_ledger --specified-id bd3sg-teaaa-aaaaa-qaaba-cai
+
+# Creating Local stablecoin_minter , root_canister before deploying usdx_ledger (These are minteraccount and archivecontroller for usdx_ledger)
+dfx canister create stablecoin_minter --specified-id be2us-64aaa-aaaaa-qaabq-cai
+dfx canister create root_canister --specified-id b77ix-eeaaa-aaaaa-qaada-cai
+
+# Deploy USDx Ledger Locally
+./scripts/deploy-local-usdx.sh
+
+dfx deploy stablecoin_minter
+
+dfx deploy root_canister
+
+
