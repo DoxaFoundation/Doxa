@@ -3,6 +3,7 @@ import IcpLedger "canister:icp_ledger";
 import CycleReserve "canister:cycle_reserve";
 import CMC "canister:cycle_minting_canister";
 import USDx "canister:usdx_ledger";
+import XRC "canister:exchange_rate_canister";
 
 import Map "mo:map/Map";
 import Vector "mo:vector";
@@ -19,11 +20,15 @@ import Time "mo:base/Time";
 import Cycles "mo:base/ExperimentalCycles";
 import Debug "mo:base/Debug";
 import Float "mo:base/Float";
+import Nat32 "mo:base/Nat32";
+import Timer "mo:base/Timer";
 import Utils "../Utils";
 
 actor StablecoinMinter {
 	type Result<T, E> = Result.Result<T, E>;
 	type HashMap<K, V> = HashMap.HashMap<K, V>;
+	type Time = Time.Time;
+	type TimerId = Timer.TimerId;
 
 	type CLBlockIndex = CycleLedger.BlockIndex;
 	type IcpBlockIndex = IcpLedger.BlockIndex;
@@ -80,6 +85,14 @@ actor StablecoinMinter {
 	};
 	type MintThroughCallResult = Result<USDxBlockIndex, MintThroughCallError>;
 
+	type UpdateXdrUsdRateError = {
+		error_time : Time;
+		error : XRC.ExchangeRateError;
+	};
+	type UpdateXdrUsdRateResult = Result<(), UpdateXdrUsdRateError>;
+
+	type XdrUsd = { rate : Float; timestamp : Nat64 };
+
 	let { nhash; n64hash } = Map;
 
 	// key = Notify cycles Ledger Tx BlockIndex ,  value = (Cycle Withdraw Tx BlockIndex, USDx mint Tx BlockIndex)
@@ -90,22 +103,13 @@ actor StablecoinMinter {
 
 	private stable let processedMintThroughCalls = Vector.new<USDxBlockIndex>();
 
-	private stable var xdrUsdRate : Float = 1.337888588;
+	private stable var xdrUsd : XdrUsd = { rate = 0; timestamp = 0 };
 
-	public shared ({ caller }) func mintForMe(amount : Nat) : async USDx.TransferResult {
-		let arg : USDx.TransferArg = {
-			to = { owner = caller; subaccount = null };
-			fee = null;
-			memo = null;
-			from_subaccount = null;
-			created_at_time = null;
-			amount;
-		};
-		await USDx.icrc1_transfer(arg);
-	};
+	let failedToUpdateXdrUsdRate = Buffer.Buffer<UpdateXdrUsdRateError>(0);
 
 	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, coin : MintCoin) : async NotifyMintWithICPResult {
 		trapAnonymousUser(caller);
+		trapWhenXRateIsZero();
 
 		if (Map.get(processedMintRequestFromIcpTx, n64hash, icpBlockIndex) != null) {
 
@@ -187,6 +191,7 @@ actor StablecoinMinter {
 
 	public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
 		trapAnonymousUser(caller);
+		trapWhenXRateIsZero();
 
 		if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
 
@@ -248,6 +253,7 @@ actor StablecoinMinter {
 
 	public shared ({ caller }) func mint_through_call(coin : MintCoin, account : ?Account) : async MintThroughCallResult {
 		trapAnonymousUser(caller);
+		trapWhenXRateIsZero();
 
 		let cyclesAmount : Nat = Cycles.available();
 		if (cyclesAmount < 1_000_000_000_000) {
@@ -292,6 +298,10 @@ actor StablecoinMinter {
 		};
 	};
 
+	public query func get_xdr_usd_rate() : async XdrUsd {
+		xdrUsd;
+	};
+
 	public query func get_account_identitier_of_stablecoin_minter() : async (IcpLedger.AccountIdentifier, Text) {
 		let accountIdentitifier = Utils.accountIdentifierDefault(Principal.fromActor(StablecoinMinter));
 		(accountIdentitifier, Utils.toHex(accountIdentitifier));
@@ -314,7 +324,7 @@ actor StablecoinMinter {
 	// Calculate mint amount in 8 decimal places on the basis of xdrUsdRate and cycles (note 1 trillion cycles is equal to  1 xdr )
 	private func calculateMintAmount(cycles : Nat) : Nat {
 		let xdrAmount : Float = Float.fromInt cycles / 1_000_000_000_000;
-		let usdAmount : Float = xdrAmount * xdrUsdRate;
+		let usdAmount : Float = xdrAmount * xdrUsd.rate;
 		let usdAmountIn8Decimals : Float = usdAmount * 100_000_000;
 
 		Int.abs(Float.toInt(usdAmountIn8Decimals));
@@ -322,6 +332,10 @@ actor StablecoinMinter {
 
 	func trapAnonymousUser(caller : Principal) : () {
 		if (Principal.isAnonymous(caller)) Debug.trap("Anonymous principal cannot mint");
+	};
+	func trapWhenXRateIsZero() : () {
+		// if (xdrUsd.rate == 0) { let result = await updateXdrUsdRate() };
+		if (xdrUsd.rate == 0) Debug.trap("XDR to USD rate is zero");
 	};
 
 	private func validateICPBlock(icpBlockIndex : Nat64, caller : Principal) : async Result<Nat64, NotifyError> {
@@ -545,8 +559,86 @@ actor StablecoinMinter {
 	};
 
 	system func preupgrade() : () {
+		stopXrcFetchTimer();
+	};
+	system func postupgrade() : () {
+		restartXrcFetchTimer();
+	};
+
+	// Fetch XDR/USD rate from XRC and update xdrUsd
+
+	private func getXdrUsdRate() : async XRC.GetExchangeRateResult {
+		let base_asset = { symbol = "CXDR"; class_ = #FiatCurrency };
+		let quote_asset = { symbol = "USD"; class_ = #FiatCurrency };
+		let timestamp = null;
+
+		Cycles.add(10_000_000_000);
+		let getExchangeRateResult = await XRC.get_exchange_rate({
+			base_asset;
+			quote_asset;
+			timestamp;
+		});
+	};
+
+	private func updateXdrUsdRate() : async UpdateXdrUsdRateResult {
+		let getExchangeRateResult = await getXdrUsdRate();
+
+		let exchangeRate : XRC.ExchangeRate = switch (getExchangeRateResult) {
+			case (#Ok(value)) { value };
+			case (#Err(error)) { return #err({ error_time = Time.now(); error = error }) };
+		};
+		let rateNat : Nat = Nat64.toNat(exchangeRate.rate);
+
+		let decimals : Float = Float.fromInt(Nat32.toNat(exchangeRate.metadata.decimals));
+
+		let rate : Float = Float.fromInt(rateNat) / (10 ** decimals);
+
+		xdrUsd := { rate; timestamp = exchangeRate.timestamp };
+
+		#ok();
+	};
+
+	private func timerUpdateXdrUsdRate() : async () {
+		let updateXdrUsdRateResult = await updateXdrUsdRate();
+		switch (updateXdrUsdRateResult) {
+			case (#ok(value)) {};
+			case (#err(error)) { failedToUpdateXdrUsdRate.add(error) };
+		};
+	};
+
+	// This will automatically fetch XDR/USD in every hour
+	private stable var xrcFetchTimerId : TimerId = 0;
+	xrcFetchTimerId := do {
+		// let currentTime = Time.now();
+		let oneHourInNanoSec = 3600_000_000_000;
+		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
+
+		Timer.setTimer(
+			#nanoseconds(Int.abs nextFetchTime),
+			func() : async () {
+				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				await timerUpdateXdrUsdRate();
+			}
+		);
 
 	};
-	system func postupgrade() : () {};
+
+	private func restartXrcFetchTimer() : () {
+		// let currentTime = Time.now();
+		let oneHourInNanoSec = 3600_000_000_000;
+		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
+
+		xrcFetchTimerId := Timer.setTimer(
+			#nanoseconds(Int.abs nextFetchTime),
+			func() : async () {
+				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				await timerUpdateXdrUsdRate();
+			}
+		);
+	};
+
+	private func stopXrcFetchTimer() : () {
+		Timer.cancelTimer(xrcFetchTimerId);
+	};
 
 };

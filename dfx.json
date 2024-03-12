@@ -25,7 +25,8 @@
 				"cycles_ledger",
 				"cycle_reserve",
 				"cycle_minting_canister",
-				"usdx_ledger"
+				"usdx_ledger",
+				"exchange_rate_canister"
 			]
 		},
 		"root_canister": {
