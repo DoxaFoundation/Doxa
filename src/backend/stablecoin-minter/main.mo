@@ -109,7 +109,7 @@ actor StablecoinMinter {
 
 	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, coin : MintCoin) : async NotifyMintWithICPResult {
 		trapAnonymousUser(caller);
-		trapWhenXRateIsZero();
+		await trapWhenXRateIsZero();
 
 		if (Map.get(processedMintRequestFromIcpTx, n64hash, icpBlockIndex) != null) {
 
@@ -191,7 +191,7 @@ actor StablecoinMinter {
 
 	public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
 		trapAnonymousUser(caller);
-		trapWhenXRateIsZero();
+		await trapWhenXRateIsZero();
 
 		if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
 
@@ -253,7 +253,7 @@ actor StablecoinMinter {
 
 	public shared ({ caller }) func mint_through_call(coin : MintCoin, account : ?Account) : async MintThroughCallResult {
 		trapAnonymousUser(caller);
-		trapWhenXRateIsZero();
+		await trapWhenXRateIsZero();
 
 		let cyclesAmount : Nat = Cycles.available();
 		if (cyclesAmount < 1_000_000_000_000) {
@@ -333,8 +333,8 @@ actor StablecoinMinter {
 	func trapAnonymousUser(caller : Principal) : () {
 		if (Principal.isAnonymous(caller)) Debug.trap("Anonymous principal cannot mint");
 	};
-	func trapWhenXRateIsZero() : () {
-		// if (xdrUsd.rate == 0) { let result = await updateXdrUsdRate() };
+	func trapWhenXRateIsZero() : async () {
+		if (xdrUsd.rate == 0) { let result = await updateXdrUsdRate() };
 		if (xdrUsd.rate == 0) Debug.trap("XDR to USD rate is zero");
 	};
 
