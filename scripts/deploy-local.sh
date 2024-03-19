@@ -2,7 +2,8 @@
 #Pull Internet Identity as a dependencies from the mainnet and deploy locally.
 dfx deps pull
 dfx deps init --argument '(null)' internet-identity
-dfx deps deploy
+dfx deps init exchange_rate_canister
+dfx deps deploy 
 
 ########################################################################################
 ########################### Deploy local ICP ledger canister ###########################
@@ -59,7 +60,6 @@ dfx deploy cycles_ledger --specified-id um5iw-rqaaa-aaaaq-qaaba-cai --argument '
 
 #Deploy Backend Canister
 dfx deploy cycle_reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai --with-cycles 1_000_000
-dfx deploy test_cycle_pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
 
 # Creating Local USDx Ledger before deploying stablecoin_minter (stablecoin_minter is a dependency of usdx_ledger)
 dfx canister create usdx_ledger --specified-id bd3sg-teaaa-aaaaa-qaaba-cai
@@ -70,6 +70,10 @@ dfx canister create root_canister --specified-id b77ix-eeaaa-aaaaa-qaada-cai
 
 # Deploy USDx Ledger Locally
 ./scripts/deploy-local-usdx.sh
+
+
+dfx canister create cycle_pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
+dfx deploy cycle_pool --argument '(principal "bw4dl-smaaa-aaaaa-qaacq-cai")'
 
 dfx deploy stablecoin_minter
 

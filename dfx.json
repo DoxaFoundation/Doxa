@@ -8,9 +8,16 @@
 			"main": "src/backend/cycle-reserve/main.mo",
 			"type": "motoko"
 		},
-		"test_cycle_pool": {
-			"main": "src/backend/test-cycle-pool/main.mo",
-			"type": "motoko"
+		"cycle_pool": {
+			"main": "src/backend/cycle-pool/main.mo",
+			"type": "motoko",
+			"dependencies": [
+				"cycle_reserve",
+				"exchange_rate_canister",
+				"usdx_ledger",
+				"icp_ledger",
+				"cycle_minting_canister"
+			]
 		},
 		"usdx_ledger": {
 			"type": "custom",
