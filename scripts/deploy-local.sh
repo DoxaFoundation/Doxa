@@ -17,7 +17,7 @@ fi
 export MINTER_ACCOUNT_ID=$(dfx ledger account-id --identity minter)
 export DEFAULT_ACCOUNT_ID=$(dfx ledger account-id --identity default)
 
-dfx deploy --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai icp_ledger --argument "
+dfx deploy icp_ledger --specified-id ryjl3-tyaaa-aaaaa-aaaba-cai --argument "
   (variant {
     Init = record {
       minting_account = \"$MINTER_ACCOUNT_ID\";
@@ -58,22 +58,22 @@ dfx deploy cycles_ledger --specified-id um5iw-rqaaa-aaaaq-qaaba-cai --argument '
   variant { Init= record { max_blocks_per_request = 1; index_id = null }}
 )'
 
-#Deploy Backend Canister
-dfx deploy cycle_reserve --specified-id br5f7-7uaaa-aaaaa-qaaca-cai --with-cycles 1_000_000
+#Deploy Reserve Canister
+dfx deploy cycle_reserve --with-cycles 1_000_000
 
 # Creating Local USDx Ledger before deploying stablecoin_minter (stablecoin_minter is a dependency of usdx_ledger)
-dfx canister create usdx_ledger --specified-id bd3sg-teaaa-aaaaa-qaaba-cai
+dfx canister create usdx_ledger --specified-id irorr-5aaaa-aaaak-qddsq-cai
 
 # Creating Local stablecoin_minter , root_canister before deploying usdx_ledger (These are minteraccount and archivecontroller for usdx_ledger)
-dfx canister create stablecoin_minter --specified-id be2us-64aaa-aaaaa-qaabq-cai
-dfx canister create root_canister --specified-id b77ix-eeaaa-aaaaa-qaada-cai
+dfx canister create stablecoin_minter --specified-id iyn2n-liaaa-aaaak-qddta-cai
+dfx canister create root_canister --specified-id iwpxf-qyaaa-aaaak-qddsa-cai
 
 # Deploy USDx Ledger Locally
 ./scripts/deploy-local-usdx.sh
 
 
-dfx canister create cycle_pool --specified-id bw4dl-smaaa-aaaaa-qaacq-cai
-dfx deploy cycle_pool --argument '(principal "bw4dl-smaaa-aaaaa-qaacq-cai")'
+dfx canister create cycle_pool --specified-id i7m4z-gqaaa-aaaak-qddtq-cai
+dfx deploy cycle_pool --argument '(principal "i7m4z-gqaaa-aaaak-qddtq-cai")'
 
 dfx deploy stablecoin_minter
 

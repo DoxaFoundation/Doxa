@@ -1,6 +1,6 @@
 import Principal "mo:base/Principal";
 import Cycles "mo:base/ExperimentalCycles";
-import Debug "mo:base/Debug";
+
 import Result "mo:base/Result";
 import Text "mo:base/Text";
 
@@ -15,16 +15,17 @@ actor {
 
 	let cyclePool : actor {
 		cycle_pool_receive : shared () -> async Nat;
-	} = actor ("bw4dl-smaaa-aaaaa-qaacq-cai");
+	} = actor ("i7m4z-gqaaa-aaaak-qddtq-cai");
 
-	let stablecoinMinter : actor {} = actor ("bd3sg-teaaa-aaaaa-qaaba-cai");
+	let stablecoinMinter : Principal = Principal.fromText("iyn2n-liaaa-aaaak-qddta-cai");
 
 	// Ledger canister or Cycle minting canister will call this method to add cycles to the reserve
 	public shared ({ caller }) func cycle_reserve_receive() : async Result {
-		if (caller != Principal.fromActor(stablecoinMinter)) {
+		if (caller != stablecoinMinter) {
 			#err("Unauthorized caller");
 		} else {
-			let acceptCycles = Cycles.accept(Cycles.available());
+			// accept Cycles
+			let _acceptCycles = Cycles.accept<system>(Cycles.available());
 			#ok();
 		};
 
@@ -32,18 +33,18 @@ actor {
 
 	// Pool canister will call this method to adjust the reserve
 	public shared ({ caller }) func cycle_reserve_adjust(operaion : Operation) : async Result {
-		if (caller != Principal.fromActor(cyclePool)) {
+		if (caller != Principal.fromText("i7m4z-gqaaa-aaaak-qddtq-cai")) {
 			return #err("Unauthorized caller");
 		};
 
 		switch (operaion) {
 			case (#Add) {
-				let acceptCycles = Cycles.accept(Cycles.available());
+				let _acceptCycles = Cycles.accept<system>(Cycles.available());
 				#ok();
 			};
 			case (#Subtract { amount : Nat }) {
-				Cycles.add(amount);
-				let subtractedCycles = await cyclePool.cycle_pool_receive();
+				Cycles.add<system>(amount);
+				let _subtractedCycles = await cyclePool.cycle_pool_receive();
 				#ok();
 			};
 		};
@@ -51,8 +52,8 @@ actor {
 	};
 
 	// Get current cycle reserve balance
-	public shared func cycle_reserve_balance() : async Nat {
-		let balance = Cycles.balance();
+	public shared query func cycle_reserve_balance() : async Nat {
+		Cycles.balance();
 	};
 
 };

@@ -1,4 +1,4 @@
-import CycleLedger "canister:cycles_ledger";
+// import CyclesLedger "canister:cycles_ledger";
 import IcpLedger "canister:icp_ledger";
 import CycleReserve "canister:cycle_reserve";
 import CMC "canister:cycle_minting_canister";
@@ -30,7 +30,7 @@ actor StablecoinMinter {
 	type Time = Time.Time;
 	type TimerId = Timer.TimerId;
 
-	type CLBlockIndex = CycleLedger.BlockIndex;
+	// type CLBlockIndex = CyclesLedger.BlockIndex;
 	type IcpBlockIndex = IcpLedger.BlockIndex;
 	type USDxBlockIndex = USDx.BlockIndex;
 
@@ -96,7 +96,7 @@ actor StablecoinMinter {
 	let { nhash; n64hash } = Map;
 
 	// key = Notify cycles Ledger Tx BlockIndex ,  value = (Cycle Withdraw Tx BlockIndex, USDx mint Tx BlockIndex)
-	private stable let processedMintRequestFromCylesLedgerTx = Map.new<CLBlockIndex, (CLBlockIndex, USDxBlockIndex)>();
+	// private stable let processedMintRequestFromCylesLedgerTx = Map.new<CLBlockIndex, (CLBlockIndex, USDxBlockIndex)>();
 
 	// key = Notify ICP Tx BlockIndex , value = (ICP to CMC Tx BlockIndex, USDx mint Tx BlockIndex)
 	private stable let processedMintRequestFromIcpTx = Map.new<IcpBlockIndex, (IcpBlockIndex, USDxBlockIndex)>();
@@ -107,7 +107,7 @@ actor StablecoinMinter {
 
 	let failedToUpdateXdrUsdRate = Buffer.Buffer<UpdateXdrUsdRateError>(0);
 
-	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, coin : MintCoin) : async NotifyMintWithICPResult {
+	public shared ({ caller }) func notify_mint_with_icp(icpBlockIndex : Nat64, _coin : MintCoin) : async NotifyMintWithICPResult {
 		trapAnonymousUser(caller);
 		await trapWhenXRateIsZero();
 
@@ -134,7 +134,7 @@ actor StablecoinMinter {
 			amount = { e8s = txAmount - 10_000 };
 			fee = { e8s = 10_000 };
 			from_subaccount = null;
-			to = Blob.toArray(accountIdentifierCMC);
+			to = accountIdentifierCMC;
 			created_at_time = ?{ timestamp_nanos = Nat64.fromIntWrap(Time.now()) };
 
 		};
@@ -163,8 +163,8 @@ actor StablecoinMinter {
 		let mintFee : Nat = calculateMintFee(cyclesAmount);
 		let reserveAmount : Nat = cyclesAmount - mintFee;
 
-		Cycles.add(reserveAmount);
-		let result = await CycleReserve.cycle_reserve_receive();
+		Cycles.add<system>(reserveAmount);
+		let _result = await CycleReserve.cycle_reserve_receive();
 
 		// calling ICRC to mint the stablecoin
 		let usdxTransferResult : USDx.TransferResult = await USDx.icrc1_transfer({
@@ -189,69 +189,75 @@ actor StablecoinMinter {
 		#ok(usdxBlockIndex);
 	};
 
-	public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
-		trapAnonymousUser(caller);
-		await trapWhenXRateIsZero();
+	/*
+    public shared ({ caller }) func notify_mint_with_cycles_ledger_transfer(blockIndex_ : CLBlockIndex, coin : MintCoin) : async NotifyMintWithCyclesLedgerTransferResult {
+        trapAnonymousUser(caller);
+        await trapWhenXRateIsZero();
 
-		if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
+        if (Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) != null) {
 
-			let (?(cyclesLedgerBlockIndex, usdxBlockIndex)) = Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) else {
-				return #err(#Other({ error_message = "blockIndex not found"; error_code = 1 }));
-			};
-			return #err(#AlreadyProcessed { blockIndex = usdxBlockIndex });
-		};
+            let (?(cyclesLedgerBlockIndex, usdxBlockIndex)) = Map.get(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_) else {
+                return #err(#Other({ error_message = "blockIndex not found"; error_code = 1 }));
+            };
+            return #err(#AlreadyProcessed { blockIndex = usdxBlockIndex });
+        };
 
-		let validatedBlockResult = await validateCyclesLedgerBlock(blockIndex_, caller);
-		let (txAmount, mintTo) : (Nat, Account) = switch (validatedBlockResult) {
-			case (#ok(value)) { value };
-			case (#err(error)) { return #err(error) };
-		};
+        let validatedBlockResult = await validateCyclesLedgerBlock(blockIndex_, caller);
+        let (txAmount, mintTo) : (Nat, Account) = switch (validatedBlockResult) {
+            case (#ok(value)) { value };
+            case (#err(error)) { return #err(error) };
+        };
 
-		// Calculate mint fee , cycles ledger transaction fee, and transfer the remaining cycles to the reserve
-		let mintFee : Nat = calculateMintFee(txAmount);
-		let ledgerTxFee : Nat = 100_000_000; // For withdrawing cycles
-		let reserveAmount : Nat = txAmount - mintFee - ledgerTxFee;
+        // Calculate mint fee , withdraw amount, and transfer the remaining cycles to the reserve
+        let mintFee : Nat = calculateMintFee(txAmount);
+        let ledgerTxFee : Nat = 100_000_000; // For withdrawing cycles
+        let withdrawAmount : Nat = txAmount - ledgerTxFee;
+        let reserveAmount : Nat = withdrawAmount - mintFee;
 
-		///// transfer the cycles to the reserve and mint the stablecoin
-		let withdrawArgs : CycleLedger.WithdrawArgs = {
-			amount = reserveAmount;
-			from_subaccount = null;
-			to = Principal.fromActor(CycleReserve);
-			created_at_time = ?Nat64.fromIntWrap(Time.now());
-		};
-		let withdrawCyclesResult = await CycleLedger.withdraw(withdrawArgs);
+        ///// withdraw  cycles to the stablecoin minter and mint the stablecoin
+        let withdrawArgs : CyclesLedger.WithdrawArgs = {
+            amount = withdrawAmount;
+            from_subaccount = null;
+            to = Principal.fromActor(StablecoinMinter);
+            created_at_time = ?Nat64.fromIntWrap(Time.now());
+        };
+        let withdrawCyclesResult = await CyclesLedger.withdraw(withdrawArgs);
 
-		let withdrawBlockIndex = switch (withdrawCyclesResult) {
-			case (#Ok(value)) { value };
-			case (#Err(error)) {
-				return #err(#Other({ error_message = "Cycles Ledger Withdraw Error"; error_code = 2 }));
-			};
-		};
+        let withdrawBlockIndex = switch (withdrawCyclesResult) {
+            case (#Ok(value)) { value };
+            case (#Err(error)) {
+                return #err(#Other({ error_message = "Cycles Ledger Withdraw Error"; error_code = 2 }));
+            };
+        };
 
-		// calling ICRC to mint the stablecoin
-		let transferResult : USDx.TransferResult = await USDx.icrc1_transfer({
-			to = mintTo;
-			fee = null;
-			memo = null;
-			from_subaccount = null;
-			created_at_time = null;
-			amount = calculateMintAmount(reserveAmount);
-		});
+        Cycles.add(reserveAmount);
+        let result = await CycleReserve.cycle_reserve_receive();
 
-		let usdxBlockIndex = switch (transferResult) {
-			case (#Ok(value)) { value };
-			case (#Err(error)) {
-				return #err(#Other({ error_message = "USDx Ledger Transfer Error"; error_code = 7 }));
-			};
-		};
+        // calling ICRC to mint the stablecoin
+        let transferResult : USDx.TransferResult = await USDx.icrc1_transfer({
+            to = mintTo;
+            fee = null;
+            memo = null;
+            from_subaccount = null;
+            created_at_time = null;
+            amount = calculateMintAmount(reserveAmount);
+        });
 
-		// Then add Block index to the processedMintRequestFromCylesLedger
-		Map.set(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_, (withdrawBlockIndex, usdxBlockIndex));
+        let usdxBlockIndex = switch (transferResult) {
+            case (#Ok(value)) { value };
+            case (#Err(error)) {
+                return #err(#Other({ error_message = "USDx Ledger Transfer Error"; error_code = 7 }));
+            };
+        };
 
-		#ok(usdxBlockIndex);
-	};
+        // Then add Block index to the processedMintRequestFromCylesLedger
+        Map.set(processedMintRequestFromCylesLedgerTx, nhash, blockIndex_, (withdrawBlockIndex, usdxBlockIndex));
 
-	public shared ({ caller }) func mint_through_call(coin : MintCoin, account : ?Account) : async MintThroughCallResult {
+        #ok(usdxBlockIndex);
+    };
+    */
+
+	public shared ({ caller }) func mint_through_call(_coin : MintCoin, account : ?Account) : async MintThroughCallResult {
 		trapAnonymousUser(caller);
 		await trapWhenXRateIsZero();
 
@@ -265,14 +271,14 @@ actor StablecoinMinter {
 			};
 
 			// obtaining cycles received through function call
-			let obtainedCycles = Cycles.accept(cyclesAmount);
+			let obtainedCycles = Cycles.accept<system>(cyclesAmount);
 
 			// After collecting minting fee in cycles send remaining cycles to reserve
 			let mintFee : Nat = calculateMintFee(obtainedCycles);
 			let reserveAmount : Nat = obtainedCycles - mintFee;
 
-			Cycles.add(reserveAmount);
-			let result = await CycleReserve.cycle_reserve_receive();
+			Cycles.add<system>(reserveAmount);
+			let _result = await CycleReserve.cycle_reserve_receive();
 
 			// calling ICRC to mint the stablecoin
 			let transferResult : USDx.TransferResult = await USDx.icrc1_transfer({
@@ -304,14 +310,18 @@ actor StablecoinMinter {
 
 	public query func get_account_identitier_of_stablecoin_minter() : async (IcpLedger.AccountIdentifier, Text) {
 		let accountIdentitifier = Utils.accountIdentifierDefault(Principal.fromActor(StablecoinMinter));
-		(accountIdentitifier, Utils.toHex(accountIdentitifier));
+		(Blob.fromArray(accountIdentitifier), Utils.toHex(accountIdentitifier));
 	};
-	public shared query ({ caller }) func caller_account_identifier() : async Text {
+	public shared query ({ caller }) func get_caller_account_identifier_for_cmc() : async Text {
 		let accountIdentitifier = Utils.accountIdentifier(
 			Principal.fromActor(CMC),
 			Utils.principalToSubaccountBlob(caller)
 		);
 		Utils.toHex(Blob.toArray accountIdentitifier);
+	};
+
+	public query func get_failed_to_update_xdr_usd_rate() : async [UpdateXdrUsdRateError] {
+		Buffer.toArray failedToUpdateXdrUsdRate;
 	};
 
 	////////// Private functions //////////
@@ -334,7 +344,7 @@ actor StablecoinMinter {
 		if (Principal.isAnonymous(caller)) Debug.trap("Anonymous principal cannot mint");
 	};
 	func trapWhenXRateIsZero() : async () {
-		if (xdrUsd.rate == 0) { let result = await updateXdrUsdRate() };
+		if (xdrUsd.rate == 0) { let _result = await updateXdrUsdRate() };
 		if (xdrUsd.rate == 0) Debug.trap("XDR to USD rate is zero");
 	};
 
@@ -357,15 +367,15 @@ actor StablecoinMinter {
 		};
 
 		// Check "to" in TX is AccountIdentifier of Stablecoin Minter with default subaccount
-		let accountIdentifierOfStablecoinMinter : IcpLedger.AccountIdentifier = Utils.accountIdentifierDefault(Principal.fromActor(StablecoinMinter));
+		let accountIdentifierOfStablecoinMinter : IcpLedger.AccountIdentifier = Blob.fromArray(Utils.accountIdentifierDefault(Principal.fromActor(StablecoinMinter)));
 		if (accountIdentifierOfStablecoinMinter != to) {
-			return #err(#InvalidTransaction("The destination account (" # Utils.toHex(to) # ") in the transaction is not the stablecoin minter's account (#" # Utils.toHex(accountIdentifierOfStablecoinMinter) # ")"));
+			return #err(#InvalidTransaction("The destination account (" # Utils.toHex(Blob.toArray to) # ") in the transaction is not the stablecoin minter's account (" # Utils.toHex(Blob.toArray accountIdentifierOfStablecoinMinter) # ")"));
 		};
 
 		// Check "from" in TX is the caller principal with default subaccount
-		let accountIdentifierOfCaller : IcpLedger.AccountIdentifier = Utils.accountIdentifierDefault(caller);
+		let accountIdentifierOfCaller : IcpLedger.AccountIdentifier = Blob.fromArray(Utils.accountIdentifierDefault(caller));
 		if ((accountIdentifierOfCaller != from) /* and (spender == null) */) {
-			return #err(#InvalidTransaction("Notifier account (" # Utils.toHex(accountIdentifierOfCaller) # ") and transaction origin account (" # Utils.toHex(from) # ") are not the same"));
+			return #err(#InvalidTransaction("Notifier account (" # Utils.toHex(Blob.toArray accountIdentifierOfCaller) # ") and transaction origin account (" # Utils.toHex(Blob.toArray from) # ") are not the same"));
 		};
 
 		// if there is spender in Tx check spender is notifying [ But they have to provide caller principal or Account to check with from]
@@ -391,56 +401,57 @@ actor StablecoinMinter {
 	//     382623823;
 	// };
 
-	private func validateCyclesLedgerBlock(blockIndex_ : CLBlockIndex, caller : Principal) : async Result<(Nat, Account), NotifyError> {
-		let getBlocksResult = await CycleLedger.icrc3_get_blocks([{
-			length = 1;
-			start = blockIndex_;
-		}]);
+	/*
+    private func validateCyclesLedgerBlock(blockIndex_ : CLBlockIndex, caller : Principal) : async Result<(Nat, Account), NotifyError> {
+        let getBlocksResult = await CyclesLedger.icrc3_get_blocks([{
+            length = 1;
+            start = blockIndex_;
+        }]);
 
-		let blocks = getBlocksResult.blocks;
-		if (blocks.size() == 0) {
-			return #err(#InvalidTransaction("Block " # Nat.toText(blockIndex_) # " not found log_length is" # Nat.toText(getBlocksResult.log_length)));
-		};
-		let block = blocks[0].block;
+        let blocks = getBlocksResult.blocks;
+        if (blocks.size() == 0) {
+            return #err(#InvalidTransaction("Block " # Nat.toText(blockIndex_) # " not found log_length is" # Nat.toText(getBlocksResult.log_length)));
+        };
+        let block = blocks[0].block;
 
-		let transferTx : CyclesLedgerTransferTX = switch (getCyclesLedgerTransferTX(block)) {
-			case (#ok(value)) { value };
-			case (#err(error)) { return #err(error) };
-		};
+        let transferTx : CyclesLedgerTransferTX = switch (getCyclesLedgerTransferTX(block)) {
+            case (#ok(value)) { value };
+            case (#err(error)) { return #err(error) };
+        };
 
-		// check principal of stablecoin minter with to
-		let transactionToPrincipal : Principal = Principal.fromBlob(transferTx.transaction.to[0]);
-		let stablecoinMinterPrincipal : Principal = Principal.fromActor(StablecoinMinter);
-		if (stablecoinMinterPrincipal != transactionToPrincipal) {
-			return #err(
-				#InvalidTransaction(
-					"The cycle destination account (" # Principal.toText(transactionToPrincipal) #
-					") in the transaction is not the stablecoin minter's account (#" # Principal.toText(stablecoinMinterPrincipal) # ")"
-				)
-			);
-		};
+        // check principal of stablecoin minter with to
+        let transactionToPrincipal : Principal = Principal.fromBlob(transferTx.transaction.to[0]);
+        let stablecoinMinterPrincipal : Principal = Principal.fromActor(StablecoinMinter);
+        if (stablecoinMinterPrincipal != transactionToPrincipal) {
+            return #err(
+                #InvalidTransaction(
+                    "The cycle destination account (" # Principal.toText(transactionToPrincipal) #
+                    ") in the transaction is not the stablecoin minter's account (#" # Principal.toText(stablecoinMinterPrincipal) # ")"
+                )
+            );
+        };
 
-		// check pricnipal of caller with from
-		let transactionFromPrincipal : Principal = Principal.fromBlob(transferTx.transaction.from[0]);
-		if (caller != transactionFromPrincipal) {
-			return #err(
-				#InvalidTransaction(
-					"Notifier principal (" # Principal.toText(caller) #
-					") and transaction origin principal (" # Principal.toText(transactionFromPrincipal) # ") are not the same"
-				)
-			);
-		};
+        // check pricnipal of caller with from
+        let transactionFromPrincipal : Principal = Principal.fromBlob(transferTx.transaction.from[0]);
+        if (caller != transactionFromPrincipal) {
+            return #err(
+                #InvalidTransaction(
+                    "Notifier principal (" # Principal.toText(caller) #
+                    ") and transaction origin principal (" # Principal.toText(transactionFromPrincipal) # ") are not the same"
+                )
+            );
+        };
 
-		// check amount is above minimum 1_000_000_000_000
-		let amount : Int = transferTx.transaction.amount;
-		if (amount < 1_000_000_000_000) {
-			return #err(#InvalidTransaction("Transaction amount is less than 1 Trillion cycles"));
-		} else {
-			#ok(Int.abs(amount), getAccountFromCyclesLedgerTxFrom(transferTx.transaction.from));
-		};
+        // check amount is above minimum 1_000_000_000_000
+        let amount : Int = transferTx.transaction.amount;
+        if (amount < 1_000_000_000_000) {
+            return #err(#InvalidTransaction("Transaction amount is less than 1 Trillion cycles"));
+        } else {
+            #ok(Int.abs(amount), getAccountFromCyclesLedgerTxFrom(transferTx.transaction.from));
+        };
 
-	};
-
+    };
+    */
 	func getCyclesLedgerTransferTX(block_ : Value) : Result<CyclesLedgerTransferTX, NotifyError> {
 		let hmap : HashMap<Text, SubValue> = Utils.formatValueOfBlock(block_);
 
@@ -562,7 +573,7 @@ actor StablecoinMinter {
 		stopXrcFetchTimer();
 	};
 	system func postupgrade() : () {
-		restartXrcFetchTimer();
+		restartXrcFetchTimer<system>();
 	};
 
 	// Fetch XDR/USD rate from XRC and update xdrUsd
@@ -572,8 +583,8 @@ actor StablecoinMinter {
 		let quote_asset = { symbol = "USD"; class_ = #FiatCurrency };
 		let timestamp = null;
 
-		Cycles.add(10_000_000_000);
-		let getExchangeRateResult = await XRC.get_exchange_rate({
+		Cycles.add<system>(10_000_000_000);
+		let _getExchangeRateResult = await XRC.get_exchange_rate({
 			base_asset;
 			quote_asset;
 			timestamp;
@@ -613,25 +624,25 @@ actor StablecoinMinter {
 		let oneHourInNanoSec = 3600_000_000_000;
 		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
 
-		Timer.setTimer(
+		Timer.setTimer<system>(
 			#nanoseconds(Int.abs nextFetchTime),
 			func() : async () {
-				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				xrcFetchTimerId := Timer.recurringTimer<system>(#seconds 3600, timerUpdateXdrUsdRate);
 				await timerUpdateXdrUsdRate();
 			}
 		);
 
 	};
 
-	private func restartXrcFetchTimer() : () {
+	private func restartXrcFetchTimer<system>() : () {
 		// let currentTime = Time.now();
 		let oneHourInNanoSec = 3600_000_000_000;
 		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
 
-		xrcFetchTimerId := Timer.setTimer(
+		xrcFetchTimerId := Timer.setTimer<system>(
 			#nanoseconds(Int.abs nextFetchTime),
 			func() : async () {
-				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				xrcFetchTimerId := Timer.recurringTimer<system>(#seconds 3600, timerUpdateXdrUsdRate);
 				await timerUpdateXdrUsdRate();
 			}
 		);

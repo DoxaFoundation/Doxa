@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 .dfx
 deps
 .mops
+canister_ids.json

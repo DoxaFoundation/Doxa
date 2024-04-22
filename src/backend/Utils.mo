@@ -127,7 +127,7 @@ module {
 			};
 		};
 
-		let subValue : SubValue = format(value);
+		let _subValue : SubValue = format(value);
 
 		return hmap;
 	};
@@ -135,5 +135,9 @@ module {
 	// Account Identifier with Subaccount default
 	public func accountIdentifierDefault(id : Principal) : [Nat8] {
 		Blob.toArray(Account.accountIdentifier(id, Account.defaultSubaccount()));
+	};
+
+	public func accountIdentifierDefaultBlob(id : Principal) : Blob {
+		Account.accountIdentifier(id, Account.defaultSubaccount());
 	};
 };

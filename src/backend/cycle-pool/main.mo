@@ -18,7 +18,7 @@ import Principal "mo:base/Principal";
 import Blob "mo:base/Blob";
 import Utils "../Utils";
 
-actor class CyclePool(cyclePoolCanisterId : Principal) {
+actor CyclePool {
 	type Operation = { #Add; #Subtract : { amount : Nat } };
 	type ReserveResult = Result.Result<(), Text>;
 	type Time = Time.Time;
@@ -41,6 +41,7 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 		};
 	};
 
+	let cyclePoolCanisterId = Principal.fromText("i7m4z-gqaaa-aaaak-qddtq-cai");
 	private stable var xdrUsd : XdrUsd = { rate = 0; timestamp = 0 };
 
 	let failedToUpdateXdrUsdRate = Buffer.Buffer<UpdateXdrUsdRateError>(0);
@@ -49,7 +50,7 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 	stable let cyclesPoolTopUpFailed = StableBuffer.init<CyclePoolTopUpError>();
 
 	public func cycle_pool_receive() : async Nat {
-		Cycles.accept(Cycles.available());
+		Cycles.accept<system>(Cycles.available());
 		// Emit event cycles received
 	};
 
@@ -67,9 +68,9 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 	};
 
 	system func postupgrade() : () {
-		restartTotalSupplyTimer();
-		restartXrcFetchTimer();
-		restartReserveAdjustTimer();
+		restartTotalSupplyTimer<system>();
+		restartXrcFetchTimer<system>();
+		restartReserveAdjustTimer<system>();
 	};
 
 	//////////// Fetch XDR/USD rate from XRC and update xdrUsd //////////////
@@ -88,7 +89,7 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 		if (expectedCyclesInReserveWithNewRate > expectedCyclesInReserveWithPreviousRate) {
 			let cycleInNeedToMaintainPeg : Nat = expectedCyclesInReserveWithNewRate - expectedCyclesInReserveWithPreviousRate;
 			let cyclePoolBalance = Cycles.balance();
-			let balanceMinusAdditionalforComputaion : Int = cyclePoolBalance - 10_000_000_000_000; // Ten trillion cycles as a buffer
+			let balanceMinusAdditionalforComputaion : Int = cyclePoolBalance - 2_000_000_000_000; // Ten trillion cycles as a buffer
 
 			if (balanceMinusAdditionalforComputaion < cycleInNeedToMaintainPeg) {
 				let cyclesToMint = cycleInNeedToMaintainPeg - balanceMinusAdditionalforComputaion;
@@ -117,7 +118,7 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 			amount = { e8s = icpAmountE8s };
 			fee = { e8s = 10_000 };
 			from_subaccount = null;
-			to = Blob.toArray(accountIdentifierCMC);
+			to = accountIdentifierCMC;
 			created_at_time = ?{ timestamp_nanos = Nat64.fromIntWrap(Time.now()) };
 		};
 
@@ -136,7 +137,7 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 			canister_id = cyclePoolCanisterId;
 		};
 		let notifyTopUpResult = await CMC.notify_top_up(notifyTopUpArg);
-		let mintedCycles : Nat = switch (notifyTopUpResult) {
+		let _mintedCycles : Nat = switch (notifyTopUpResult) {
 			case (#Ok(value)) { value };
 			case (#Err(error)) {
 				StableBuffer.add(cyclesPoolTopUpFailed, { error_time = Time.now(); error = #CMC error });
@@ -150,8 +151,8 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 		let quote_asset = { symbol = "USD"; class_ = #FiatCurrency };
 		let timestamp = null;
 
-		Cycles.add(10_000_000_000);
-		let getExchangeRateResult = await XRC.get_exchange_rate({
+		Cycles.add<system>(10_000_000_000);
+		let _getExchangeRateResult = await XRC.get_exchange_rate({
 			base_asset;
 			quote_asset;
 			timestamp;
@@ -195,25 +196,25 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 		let oneHourInNanoSec = 3600_000_000_000;
 		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
 
-		Timer.setTimer(
+		Timer.setTimer<system>(
 			#nanoseconds(Int.abs nextFetchTime),
 			func() : async () {
-				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				xrcFetchTimerId := Timer.recurringTimer<system>(#seconds 3600, timerUpdateXdrUsdRate);
 				await timerUpdateXdrUsdRate();
 			}
 		);
 
 	};
 
-	private func restartXrcFetchTimer() : () {
+	private func restartXrcFetchTimer<system>() : () {
 		// let currentTime = Time.now();
 		let oneHourInNanoSec = 3600_000_000_000;
 		let nextFetchTime = oneHourInNanoSec - (Time.now() % oneHourInNanoSec);
 
-		xrcFetchTimerId := Timer.setTimer(
+		xrcFetchTimerId := Timer.setTimer<system>(
 			#nanoseconds(Int.abs nextFetchTime),
 			func() : async () {
-				xrcFetchTimerId := Timer.recurringTimer(#seconds 3600, timerUpdateXdrUsdRate);
+				xrcFetchTimerId := Timer.recurringTimer<system>(#seconds 3600, timerUpdateXdrUsdRate);
 				await timerUpdateXdrUsdRate();
 			}
 		);
@@ -231,11 +232,11 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 
 	stable var totalSupplyTimerId : TimerId = 0;
 	totalSupplyTimerId := do {
-		Timer.recurringTimer(#seconds 1, fetchTotalSupply);
+		Timer.recurringTimer<system>(#seconds 1, fetchTotalSupply);
 	};
 
-	private func restartTotalSupplyTimer() : () {
-		totalSupplyTimerId := Timer.recurringTimer(#seconds 1, fetchTotalSupply);
+	private func restartTotalSupplyTimer<system>() : () {
+		totalSupplyTimerId := Timer.recurringTimer<system>(#seconds 1, fetchTotalSupply);
 	};
 
 	private func stopTotalSupplyTimer() : () {
@@ -248,22 +249,26 @@ actor class CyclePool(cyclePoolCanisterId : Principal) {
 		let expectedCyclesInReserve__ : Float = usdxTotalSupply * (1 / xdrUsd.rate) * 1_000_000_000_000;
 		let expectedCyclesInReserve = Int.abs(Float.toInt(expectedCyclesInReserve__));
 
+		// 8,511,097,318,335 = 11.33606873*(1/1.331916239)*1,000,000,000,000
+		//  8,511,097,318,335  > 8_499_224_797_270
+
 		if (expectedCyclesInReserve > reserveCurrentCycles) {
-			Cycles.add(expectedCyclesInReserve - reserveCurrentCycles);
-			let result = await CycleReserve.cycle_reserve_adjust(#Add);
+			// 11,872,521,065
+			Cycles.add<system>(expectedCyclesInReserve - reserveCurrentCycles);
+			let _result = await CycleReserve.cycle_reserve_adjust(#Add);
 		} else if (expectedCyclesInReserve < reserveCurrentCycles) {
 			let amount : Nat = reserveCurrentCycles - expectedCyclesInReserve;
-			let result = await CycleReserve.cycle_reserve_adjust(#Subtract { amount });
+			let _result = await CycleReserve.cycle_reserve_adjust(#Subtract { amount });
 		};
 	};
 
 	stable var reserveAdjustTimerId : TimerId = 0;
 	reserveAdjustTimerId := do {
-		Timer.recurringTimer(#seconds 1, adjustCycleReserve);
+		Timer.recurringTimer<system>(#seconds 1, adjustCycleReserve);
 	};
 
-	private func restartReserveAdjustTimer() : () {
-		reserveAdjustTimerId := Timer.recurringTimer(#seconds 1, adjustCycleReserve);
+	private func restartReserveAdjustTimer<system>() : () {
+		reserveAdjustTimerId := Timer.recurringTimer<system>(#seconds 1, adjustCycleReserve);
 	};
 	private func stopReserveAdjustTimer() : () {
 		Timer.cancelTimer(reserveAdjustTimerId);

@@ -29,7 +29,6 @@
 			"type": "motoko",
 			"dependencies": [
 				"icp_ledger",
-				"cycles_ledger",
 				"cycle_reserve",
 				"cycle_minting_canister",
 				"usdx_ledger",
@@ -55,8 +54,9 @@
 		},
 		"icp_ledger": {
 			"type": "custom",
-			"candid": "https://raw.githubusercontent.com/dfinity/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/rs/rosetta-api/icp_ledger/ledger.did",
-			"wasm": "https://download.dfinity.systems/ic/206a50f01306b398eb7e25988c7925fcd0e2caa4/canisters/ledger-canister.wasm.gz",
+			"candid": "https://raw.githubusercontent.com/dfinity/ic/33dd2ef2184a64c00e64ff0412e7378d46507005/rs/rosetta-api/icp_ledger/ledger.did",
+			"wasm": "https://download.dfinity.systems/ic/33dd2ef2184a64c00e64ff0412e7378d46507005/canisters/ledger-canister.wasm.gz",
+			"specified_id": "ryjl3-tyaaa-aaaaa-aaaba-cai",
 			"remote": {
 				"id": {
 					"ic": "ryjl3-tyaaa-aaaaa-aaaba-cai"
@@ -67,6 +67,7 @@
 			"type": "custom",
 			"candid": "https://raw.githubusercontent.com/dfinity/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/rs/nns/cmc/cmc.did",
 			"wasm": "https://download.dfinity.systems/ic/2e921c9adfc71f3edc96a9eb5d85fc742e7d8a9f/canisters/cycles-minting-canister.wasm.gz",
+			"specified_id": "rkp4c-7iaaa-aaaaa-aaaca-cai",
 			"remote": {
 				"id": {
 					"ic": "rkp4c-7iaaa-aaaaa-aaaca-cai"
